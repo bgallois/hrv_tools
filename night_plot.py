@@ -21,6 +21,7 @@ import matplotlib.pyplot as plt
 import os
 import datetime
 import time
+import matplotlib.dates as mdates
 plt.style.use('seaborn-v0_8-darkgrid')
 
 def moving_average(a, n=3):
@@ -31,10 +32,11 @@ def moving_average(a, n=3):
 def process(path, verbose=True):
     # Load and resample data
     sensor_rate = 100
-    resample_rate = 500
+    resample_rate = 400
     data = pd.read_csv(path, header=None, names=["red", "ir"])
     data.red = pd.to_numeric(data.red, errors="coerce")
     data["time"] = np.arange(0, len(data.red.values)*1/sensor_rate, 1/sensor_rate)
+    data = data[data.time < (data.time.values[-1] - 3*60)]
     data = data.dropna().astype(float)
     data = data.reset_index(drop=True)
     data = data.set_index(pd.TimedeltaIndex(data["time"], "s"))
@@ -44,11 +46,11 @@ def process(path, verbose=True):
     # Filter data by first applying a low pass filter to remove large wave variation,
     # then a Wiener filter to remove noise
     # and finally a Savgol filter to smooth the peaks.
-    sos = scipy.signal.butter(10, 0.01, 'hp', fs=resample_rate, output='sos')
+    #sos = scipy.signal.butter(10, 0.01, 'hp', fs=resample_rate, output='sos')
     #data.red = scipy.signal.sosfilt(sos, data.red)
     data.red = scipy.signal.detrend(data.red)
-    data.red = scipy.signal.wiener(data.red, int(40*1e-3*resample_rate)) # 40ms window
-    data.red = scipy.signal.savgol_filter(data.red, int(80*1e-3*resample_rate), 2) # 20ms window
+    data.red = scipy.signal.wiener(data.red, int(100*1e-3*resample_rate)) # 40ms window
+    data.red = scipy.signal.savgol_filter(data.red, int(80*1e-3*resample_rate), 4) # 20ms window
 
     # Peaks detection control
     distance = (600*resample_rate)/1000 # Maximum 100 beats per seconds 60*1e3/100
@@ -64,7 +66,7 @@ def process(path, verbose=True):
 
     hrv_window = 3 # hrv window in minutes
     interval_len = int((60*hrv_window) // (data.time.diff().mean()))
-    confidence = 0.01 # Windows with more than confidence*100 % of artefact will be removed
+    confidence = 0.005 # Windows with more than confidence*100 % of artefact will be removed
 
     y = []
     x = []
@@ -86,7 +88,7 @@ def process(path, verbose=True):
             print("Deleted")
 
     trend_step = 5
-    vals = ["sdnn", "pnni_50", "rmssd", "lf", "hf"]
+    vals = ["rmssd", "sdnn", "pnni_50", "lf", "hf"]
     if verbose:
         fig, axs = plt.subplots(6, 1)
         axs[0].plot(x[trend_step//2:-trend_step//2+1], moving_average([i["mean_hr"] for i in y], trend_step), color="magenta", alpha=.4, label="Trend")
@@ -115,9 +117,18 @@ for i in sorted(sys.argv[1:]):
     except Exception as e:
         print(e, i)
 
-vals = ["mean_hr", "sdnn", "pnni_50", "rmssd", "lf", "hf"]
+vals = ["mean_hr", "rmssd", "sdnn", "pnni_50", "lf", "hf"]
 fig, axs = plt.subplots(6, 1)
 for l, k in enumerate(vals):
     axs[l].errorbar(date_, [np.mean([j[k] for j in i]) for i in res], yerr=np.asarray([np.std([j[k] for j in i]) for i in res])/np.sqrt(np.asarray([len([j[k] for j in i]) for i in res])), fmt="-", color="C{}".format(l), label=k)
+    if k in ["lf", "hf"]:
+        axs[l].set_ylabel("$ms^2$")
+    elif k in ["mean_hr"]:
+        axs[l].set_ylabel("$bpm$")
+    else:
+        axs[l].set_ylabel("$ms$")
+axs[-1].set_xlabel("Date")
+axs[-1].xaxis.set_major_formatter(mdates.DateFormatter('%a'))
+axs[-1].tick_params(axis="x", labelrotation=90)
 fig.legend()
 plt.show()
