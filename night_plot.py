@@ -66,7 +66,7 @@ def process(path, verbose=True):
 
     hrv_window = 3 # hrv window in minutes
     interval_len = int((60*hrv_window) // (data.time.diff().mean()))
-    confidence = 0.005 # Windows with more than confidence*100 % of artefact will be removed
+    confidence = 0.05 # Windows with more than confidence*100 % of artefact will be removed
 
     y = []
     x = []
@@ -81,7 +81,7 @@ def process(path, verbose=True):
             nn_intervals = hrvanalysis.interpolate_nan_values(rr_intervals=nn_intervals)
             time_domain_features = hrvanalysis.get_time_domain_features(nn_intervals)
             time_domain_features.update(hrvanalysis.get_frequency_domain_features(nn_intervals))
-            if not np.isnan(time_domain_features["mean_hr"]) and deleted_beat/len(nn_intervals) < 0.1:
+            if not np.isnan(time_domain_features["mean_hr"]) and deleted_beat/len(nn_intervals) < confidence:
                 y.append(time_domain_features)
                 x.append(data.time.values[i]/3600)
         except:
